@@ -16,7 +16,7 @@ pip install --upgrade hdmf_zarr
 # 3. Setup xenium_env
 conda create -y -n xenium_env python=3.12
 conda activate xenium_env
-pip install spatialdata[extra]==0.6.1 scanpy==1.11.5 ipykernel
+pip install spatialdata[extra]==0.6.1 scanpy==1.11.5 ipykernel codeocean
 pip install --upgrade spatialdata xarray-schema
 # installing git repos
 # cd /

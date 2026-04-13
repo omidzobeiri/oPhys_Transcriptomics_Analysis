@@ -8,6 +8,16 @@
 		"mount_secrets": true
 	},
 	"installers": {
+		"pip": {
+			"packages": [
+				{
+					"name": "codeocean",
+					"version": "0.15.0"
+				}
+			],
+			"options": {},
+			"pre_install_options": {}
+		},
 		"vscode": {}
 	}
 }
