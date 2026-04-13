@@ -14,18 +14,6 @@ def fillna_interp1d(timestamps, input_signal):
     f = interp1d(timestamps[~hasnan],input_signal[~hasnan],bounds_error=False,fill_value="extrapolate") #type: ignore
     return f(timestamps)
 
-def generate_X(glm_inputs, timestamps):
-
-    X = np.empty((len(timestamps),0))
-    ind = {}
-    for kernel in glm_inputs:
-        kernel_timestamps = glm_inputs[kernel]['timestamps']
-        data = glm_inputs[kernel]['data']
-        for lag in glm_inputs[kernel]['kernel_lags']:
-            f = interp1d(kernel_timestamps+lag,data,bounds_error=False,fill_value='extrapolate') #type: ignore
-            X = np.column_stack((X,f(timestamps))) 
-        ind[kernel] = np.arange(X.shape[1]-len(glm_inputs[kernel]['kernel_lags']),X.shape[1])
-    return X, ind
 
 def percentile_standardization(X, lower_percentile = 10, upper_percentile = 90):
     lower_ind = np.round(X.shape[0]*lower_percentile/100).astype(int)
@@ -34,271 +22,6 @@ def percentile_standardization(X, lower_percentile = 10, upper_percentile = 90):
         np.std(np.sort(X,axis=0)[lower_ind:higher_ind],axis=0)) 
 
     return X
-
-
-def get_context_features(stimulus_table, reference_timestamps, shifts = [0]):
-    stimulus_names = stimulus_table['stimulus_name'].unique()
-    glm_config_context = {}
-    glm_config_context['X'] = []
-    glm_config_context['names'] = stimulus_names
-    glm_config_context['shifts'] = [shifts]*len(stimulus_names)
-
-    for stimulus_name in stimulus_names:
-        is_session = (stimulus_table['stimulus_name'] == stimulus_name).values.astype(int)
-        is_session_ = np.hstack([0,is_session,0])
-        starts_ = np.where(np.diff(is_session_)==1)[0]
-        stops_ = np.where(np.diff(is_session_)==-1)[0]-1
-        context_feature = np.zeros((len(reference_timestamps),len(shifts)))
-        for i_shift, shift in enumerate(shifts):
-            for i_repeat in range(len(starts_)):
-                start_index = np.argmin(np.abs(reference_timestamps - stimulus_table.loc[starts_[i_repeat],'start_time']))
-                stop_index = np.argmin(np.abs(reference_timestamps - stimulus_table.loc[starts_[i_repeat],'stop_time']))
-                context_feature[start_index+shift:stop_index+shift,i_shift] = 1
-        glm_config_context['X'].append(context_feature)
-    
-    return glm_config_context
-
-
-def get_visual_features(stimulus_table, reference_timestamps, shifts = np.arange(-5,25,1)):
-    
-    combs = stimulus_table.drop_duplicates(subset=['TF','contrast','direction'])[['TF','contrast','direction']].reset_index(drop=True)
-    glm_config_visual = {}
-    glm_config_visual['X'] = []
-    glm_config_visual['names'] = []
-    glm_config_visual['shifts'] = [shifts]*len(combs)
-
-    
-    for ind, comb in combs.iterrows():
-        TF = comb['TF']
-        contrast = comb['contrast']
-        direction = comb['direction']
-        key = 'TF_'+str(TF)+'_contrast_'+str(contrast)+'_direction_'+str(direction)
-
-        shifts = glm_config_visual['shifts'][ind]
-        visual_feature = np.zeros((len(reference_timestamps),len(shifts)))
-        if np.isnan(TF):
-            locs = stimulus_table[pd.isna(stimulus_table['TF'])].index
-        else:
-            locs = stimulus_table[(stimulus_table['TF'] == TF) & (stimulus_table['contrast'] == contrast) & (stimulus_table['direction'] == direction)].index
-        for loc in locs:
-            start_index = np.argmin(np.abs(reference_timestamps - stimulus_table.loc[loc,'start_time']))
-            for i_shift, shift in enumerate(shifts):
-                visual_feature[start_index+shift,i_shift] = 1
-                
-        glm_config_visual['X'].append(visual_feature)
-        glm_config_visual['names'].append(key)
-    
-    return glm_config_visual
-
-
-
-def get_visual_features_block(stimulus_table, reference_timestamps, shifts = np.arange(-5,25,1)):
-    
-    combs = stimulus_table.drop_duplicates(subset=['stim_block','TF','contrast','direction'])[['stim_block','TF','contrast','direction']].reset_index(drop=True)
-    glm_config_visual = {}
-    glm_config_visual['X'] = []
-    glm_config_visual['names'] = []
-    glm_config_visual['shifts'] = [shifts]*len(combs)
-
-    
-    for ind, comb in combs.iterrows():
-        TF = comb['TF']
-        contrast = comb['contrast']
-        direction = comb['direction']
-        stim_block = comb['stim_block']
-        key = 'block_'+str(stim_block)+'_TF_'+str(TF)+'_contrast_'+str(contrast)+'_direction_'+str(direction)
-
-        shifts = glm_config_visual['shifts'][ind]
-        visual_feature = np.zeros((len(reference_timestamps),len(shifts)))
-        if np.isnan(TF):
-            locs = stimulus_table[pd.isna(stimulus_table['TF'])].index
-        else:
-            locs = stimulus_table[(stimulus_table['stim_block'] == stim_block) & (stimulus_table['TF'] == TF) & (stimulus_table['contrast'] == contrast) & (stimulus_table['direction'] == direction)].index
-        for loc in locs:
-            start_index = np.argmin(np.abs(reference_timestamps - stimulus_table.loc[loc,'start_time']))
-            for i_shift, shift in enumerate(shifts):
-                visual_feature[start_index+shift,i_shift] = 1
-                
-        glm_config_visual['X'].append(visual_feature)
-        glm_config_visual['names'].append(key)
-    
-    return glm_config_visual
-    
-def get_neural_features(Y, distances, i_cell, shifts = [0], cell_dist_thr = 100):
-    glm_config_neural = {}
-    
-    glm_config_neural = {}
-    glm_config_neural['X'] = []
-    glm_config_neural['names'] = ['close neighbors','far neighbors']
-    glm_config_neural['shifts'] = [0]*2
-    glm_config_neural['neighbors ids'] = {}
-    
-    i_cells_close = np.where((distances[i_cell,:]<cell_dist_thr) & (distances[i_cell,:]>0))[0]
-    i_cells_far = np.where(distances[i_cell,:]>=cell_dist_thr)[0]
-    if len(i_cells_close) == 0:
-        pca_close = np.zeros((Y.shape[0],1))
-    else:
-        Y_close = Y[:,i_cells_close]
-        pca_ = PCA(n_components=1)
-        pca_close = pca_.fit_transform(Y_close)
-    
-    if len(i_cells_far) == 0:
-        pca_far = np.zeros((Y.shape[0],1))
-    else:
-        Y_far = Y[:,i_cells_far]
-        pca_ = PCA(n_components=1)
-        pca_far = pca_.fit_transform(Y_far)
-    
-    glm_config_neural['X'].append(pca_close)
-    glm_config_neural['X'].append(pca_far)
-        
-    return glm_config_neural
-
-def get_state_features(running_speed, running_speed_timestamps, reference_timestamps, shifts = np.arange(-10,11,1), pupil_diameter=None,eye_tracking_timestamps = None ):
-    glm_config_state = {}
-    glm_config_state['X'] = []
-    glm_config_state['names'] = ['pupil_running']
-    glm_config_state['shifts'] = [shifts]
-    
-    running_speed = interp1d(running_speed_timestamps,running_speed,assume_sorted=True,bounds_error=False, fill_value=0)(reference_timestamps)
-    if pupil_diameter is not None:
-        try:
-            pupil_diameter = interp1d(eye_tracking_timestamps,pupil_diameter,assume_sorted=True,bounds_error=False, fill_value=0)(reference_timestamps)
-            run_pupil = np.vstack((running_speed,pupil_diameter)).T
-            
-            run_pupil = zscore(run_pupil,axis=0)
-            
-            pca = PCA(n_components=1)
-            state = pca.fit_transform(run_pupil).squeeze()
-        except:
-            state = zscore(running_speed).reshape(1,-1)
-    else:
-        state = zscore(running_speed).reshape(1,-1)
-    state_features = np.tile(state,(len(shifts),1)).T
-    for shift in shifts:
-        state_features[:,shift] = np.roll(state,shift)
-    glm_config_state['X'].append(state_features)    
-    return glm_config_state
-
-
-def get_visual_features_fnn(visual_features, visual_timestamps, reference_timestamps, shifts = np.arange(-5,25,1)):
-    cols = visual_features.columns
-    glm_config_visual = {}
-    glm_config_visual['X'] = []
-    glm_config_visual['names'] = []
-    glm_config_visual['shifts'] = [shifts]*len(cols)
-
-    for col in visual_features.columns: 
-        X = visual_features[col].values
-        X_interpl = interp1d(visual_timestamps,X,assume_sorted=True,bounds_error=False, fill_value=0)(reference_timestamps)
-        glm_config_visual['names'].append(col)
-        visual_feature = np.zeros((len(reference_timestamps),len(shifts)))
-        for i_shift, shift in enumerate(shifts):
-            visual_feature[:,i_shift] = np.roll(X_interpl,shift)
-        glm_config_visual['X'].append(visual_feature)   
-    return glm_config_visual
-
-def L2_glm(X,Y,alphas, n_bootstrap):
-    if alphas == 0:
-        W_best = np.dot(np.linalg.inv(np.dot(X.T, X)),np.dot(X.T, Y))
-        Y_hat = np.dot(X,W_best)
-        Alpha_best = 0
-
-        VAF_train = 1 - np.var(Y - Y_hat,axis=0) / np.var(Y,axis=0)
-        VAF_test = 0
-        VAF_eval = 0
-    else:   
-        eval_size = test_size = int(Y.shape[0]/n_bootstrap)
-        VAF_train = np.zeros((Y.shape[1], len(alphas),n_bootstrap))
-        VAF_test = np.zeros((Y.shape[1], len(alphas),n_bootstrap))
-        VAF_eval = np.zeros(Y.shape[1])
-        W = np.zeros((X.shape[1],Y.shape[1], len(alphas),n_bootstrap))
-        W_best = np.zeros((X.shape[1],Y.shape[1]))
-        Alpha_best = np.zeros(Y.shape[1])
-        for i_alpha, alpha in enumerate(alphas):
-            for i_bootstrap in tqdm(range(n_bootstrap), desc=f' alpha = {alpha}'): 
-                test_start = i_bootstrap*test_size
-                test_inds = np.arange(test_start,test_start+test_size)
-                eval_start = (i_bootstrap+1)*test_size % Y.shape[0]
-                eval_inds = (eval_start + np.arange(eval_size)) % Y.shape[0]
-                train_inds = np.delete(np.arange(Y.shape[0]),np.concatenate((test_inds, eval_inds)))
-                X_train = X[train_inds]
-                X_test = X[test_inds]
-                X_eval = X[eval_inds]
-                Y_train = Y[train_inds]
-                Y_test = Y[test_inds]
-                Y_eval = Y[eval_inds]
-                W_ = W[:,:,i_alpha,i_bootstrap] = np.dot(np.linalg.inv(np.dot(X_train.T, X_train) + 
-                                                    alpha * np.eye(X_train.shape[-1])),
-                                                    np.dot(X_train.T, Y_train))
-                Y_hat_test = np.dot(X_test, W_)
-                VAF_test[:,i_alpha, i_bootstrap] = 1 - np.var(Y_test - Y_hat_test,axis=0) / np.var(Y_test,axis=0)
-                Y_hat_train = np.dot(X_train, W_)
-                VAF_train[:,i_alpha, i_bootstrap] = 1 - np.var(Y_train - Y_hat_train,axis=0) / np.var(Y_train,axis=0)
-        i_alpha_best = np.argmax(np.mean(VAF_test, axis=2), axis=1)
-        i_alpha_best_corrected = np.zeros_like(i_alpha_best)
-        
-        X_test_train = np.concatenate((X_test, X_train), axis=0)
-        Y_test_train = np.concatenate((Y_test, Y_train), axis=0)
-        mu_test = np.mean(VAF_test, axis=2)
-        sd_test = np.std(VAF_test,axis=2)
-        for i in tqdm(range(Y.shape[1]), desc = 'computing evaluation explained variance'):
-            
-            i_alpha_best_corrected[i] = np.where(mu_test[i] > mu_test[i,i_alpha_best[i]]-sd_test[i,i_alpha_best[i]])[0][-1]
-            Alpha_best[i] = alphas[i_alpha_best_corrected[i]]
-            W_ = np.dot(np.linalg.inv(np.dot(X_test_train.T, X_test_train) + Alpha_best[i] * np.eye(X_test_train.shape[-1])),
-                                                    np.dot(X_test_train.T, Y_test_train[:,i]))
-            W_best[:,i] = W_
-            Y_hat_eval = np.dot(X_eval, W_)
-            VAF_eval[i] = 1 - np.var(Y_eval[:,i] - Y_hat_eval,axis=0) / np.var(Y_eval[:,i],axis=0)
-        
-        Y_hat = np.dot(X,W_best)
-    
-    return (Y_hat, W_best, Alpha_best, VAF_train, VAF_test, VAF_eval)
-
-def L2_glm_old(X,Y,alphas, n_bootstrap):
-    if alphas == 0:
-        W_star = np.dot(np.linalg.inv(np.dot(X.T, X)),np.dot(X.T, Y))
-        Y_hat = np.dot(X,W_star)
-        Alpha_star = 0
-    else:   
-        if n_bootstrap > 1:
-            test_size = int(Y.shape[0]/n_bootstrap)
-            VAF_test = np.zeros((Y.shape[1], len(alphas),n_bootstrap))
-            W = np.zeros((X.shape[1],Y.shape[1], len(alphas),n_bootstrap))
-            for i_bootstrap in range(n_bootstrap):
-                for i_alpha, alpha in enumerate(alphas):
-                    test_start = i_bootstrap*test_size
-                    test_inds = np.arange(test_start,test_start+test_size)
-                    train_inds = np.delete(np.arange(Y.shape[0]),test_inds)
-                    X_train = X[train_inds]
-                    X_test = X[test_inds]
-                    Y_train = Y[train_inds]
-                    Y_test = Y[test_inds]
-                    W_ = W[:,:,i_alpha,i_bootstrap] = np.dot(np.linalg.inv(np.dot(X_train.T, X_train) + 
-                                                        alpha * np.eye(X_train.shape[-1])),
-                                                        np.dot(X_train.T, Y_train))
-                    Y_hat = np.dot(X_test, W_)
-                    VAF_test[:,i_alpha, i_bootstrap] = 1 - np.var(Y_test - Y_hat,axis=0) / np.var(Y_test,axis=0)
-            VAF_mu = np.mean(VAF_test,axis=2)
-
-        else:
-            VAF_mu = np.zeros((Y.shape[1], len(alphas)))
-            W = np.zeros((X.shape[1],Y.shape[1], len(alphas),1))
-            for i_alpha, alpha in enumerate(alphas):
-                W_ = W[:,:,i_alpha,0] = np.dot(np.linalg.inv(np.dot(X.T, X) + 
-                                                    alpha * np.eye(X.shape[-1])),
-                                                    np.dot(X.T, Y))
-                Y_hat = np.dot(X, W_)
-                VAF_mu[:,i_alpha] = 1 - np.var(Y - Y_hat,axis=0) / np.var(Y,axis=0)
-                
-                
-        ind = np.argmax(VAF_mu, axis = 1)
-        VAF_mu_star = np.max(VAF_mu, axis = 1)    
-        W_star = np.vstack([W.mean(axis=3)[:,i,ind[i]] for i in range(W.shape[1])]).T
-        Alpha_star = np.array([alphas[i] for i in ind]) 
-        Y_hat = np.dot(X,W_star)
-    return (Y_hat, W_star, Alpha_star, VAF_mu_star)
 
 
 def get_stimulus_timestamps(h5_file):
@@ -377,158 +100,6 @@ def get_stimulus_timestamps(h5_file):
     stim_time = falling_edges['vsync_stim'] + delay_mu
     return stim_time
 
-
-def L2_glm_optimized(X, Y, alphas, n_bootstrap):
-    n_samples, n_features = X.shape
-    n_targets = Y.shape[1]
-
-    # --- Case 1: Standard OLS (alphas == 0) ---
-    # Handle scalar 0 or list [0]
-    if np.all(alphas == 0):
-        # Use lstsq for stability instead of explicit inverse
-        W_best = np.linalg.lstsq(X, Y, rcond=None)[0]
-        Y_hat = X @ W_best
-        Alpha_best = np.zeros(n_targets)
-
-        # Vectorized VAF calculation
-        VAF_train = 1 - np.var(Y - Y_hat, axis=0) / np.var(Y, axis=0)
-        return Y_hat, W_best, Alpha_best, VAF_train, 0, 0
-
-    # --- Case 2: Ridge Regression (Loop Optimization) ---
-    alphas = np.array(alphas)
-    n_alphas = len(alphas)
-    fold_size = int(n_samples / n_bootstrap)
-
-    # Pre-allocate output tensors
-    # Shapes follow the logic: (Targets, Alphas, Bootstraps)
-    VAF_train = np.zeros((n_targets, n_alphas, n_bootstrap))
-    VAF_test = np.zeros((n_targets, n_alphas, n_bootstrap))
-    W_all = np.zeros((n_features, n_targets, n_alphas, n_bootstrap))
-
-    # Precompute Global Covariance Matrices (The "Covariance Subtraction" trick)
-    XtX_global = X.T @ X
-    XtY_global = X.T @ Y
-
-    # Iterate over Bootstraps (Outer Loop)
-    # We flipped the loops: Bootstrap > Alpha. This allows reusing the decomposition.
-    for i_bootstrap in tqdm(range(n_bootstrap), desc='Bootstrapping'):
-        
-        # 1. Define Indices
-        test_start = i_bootstrap * fold_size
-        test_inds = np.arange(test_start, test_start + fold_size)
-        eval_start = (i_bootstrap + 1) * fold_size % n_samples
-        eval_inds = (eval_start + np.arange(fold_size)) % n_samples
-        
-        # Combine indices to remove (Test + Eval) to get Train
-        inds_remove = np.concatenate((test_inds, eval_inds))
-        X_remove = X[inds_remove]
-        Y_remove = Y[inds_remove]
-
-        # 2. Efficiently update XtX and XtY for training set
-        # XtX_train = XtX_global - XtX_removed
-        XtX_remove = X_remove.T @ X_remove
-        XtY_remove = X_remove.T @ Y_remove
-        
-        XtX_train = XtX_global - XtX_remove
-        XtY_train = XtY_global - XtY_remove
-
-        # 3. Eigen Decomposition (The "Solver" Optimization)
-        # Decompose once, solve for all alphas instantly
-        eigvals, eigvecs = np.linalg.eigh(XtX_train)
-        
-        # Project XtY onto eigenbasis: Z = V.T @ XtY
-        Z = eigvecs.T @ XtY_train  # Shape: (Features, Targets)
-
-        # 4. Solve for all Alphas simultaneously via Broadcasting
-        # Formula: W = V @ (1 / (eigvals + alpha)) @ Z
-        # diag_inv shape: (Alphas, Features)
-        diag_inv = 1.0 / (alphas[:, None] + eigvals[None, :])
-        
-        # Scale Z by the inverse eigenvalues for each alpha
-        # Scaled Z shape: (Alphas, Features, Targets)
-        scaled_Z = diag_inv[:, :, None] * Z[None, :, :]
-        
-        # Project back to original basis to get W
-        # einsum: f=features(evecs), k=latent, a=alphas, t=targets
-        # W_alphas shape: (Alphas, Features, Targets)
-        W_alphas = np.einsum('fk, akt -> aft', eigvecs, scaled_Z)
-        
-        # Store W (transpose to match expected shape: F, T, A)
-        W_all[..., i_bootstrap] = W_alphas.transpose(1, 2, 0)
-
-        # 5. Vectorized Prediction and Evaluation
-        # Reconstruct X_train using mask (faster than setdiff1d)
-        mask_train = np.ones(n_samples, dtype=bool)
-        mask_train[inds_remove] = False
-        X_train_fold = X[mask_train]
-        Y_train_fold = Y[mask_train]
-        X_test_fold = X[test_inds]
-        Y_test_fold = Y[test_inds]
-
-        # Predict Train: (N_train, F) @ (A, F, T) -> (N_train, A, T)
-        Y_hat_train = np.einsum('nf, aft -> nat', X_train_fold, W_alphas)
-        # Predict Test
-        Y_hat_test = np.einsum('nf, aft -> nat', X_test_fold, W_alphas)
-
-        # Calculate VAF (Vectorized)
-        # Train
-        res_train = Y_train_fold[:, None, :] - Y_hat_train
-        vaf_train_fold = 1 - np.var(res_train, axis=0) / np.var(Y_train_fold[:, None, :], axis=0)
-        VAF_train[..., i_bootstrap] = vaf_train_fold.T # Transpose to (Targets, Alphas)
-
-        # Test
-        res_test = Y_test_fold[:, None, :] - Y_hat_test
-        vaf_test_fold = 1 - np.var(res_test, axis=0) / np.var(Y_test_fold[:, None, :], axis=0)
-        VAF_test[..., i_bootstrap] = vaf_test_fold.T
-
-    # --- Final Selection & Evaluation ---
-    # Aggregate statistics
-    mu_test = np.mean(VAF_test, axis=2)
-    sd_test = np.std(VAF_test, axis=2)
-    i_alpha_best = np.argmax(mu_test, axis=1)
-    
-    Alpha_best = np.zeros(n_targets)
-    W_best = np.zeros((n_features, n_targets))
-    VAF_eval = np.zeros(n_targets)
-
-    # Reconstruct the indices for the FINAL fold (to match original logic)
-    # The original code evaluated on the eval set of the *last* bootstrap iteration.
-    last_boot_idx = n_bootstrap - 1
-    eval_start = (last_boot_idx + 1) * fold_size % n_samples
-    eval_inds = (eval_start + np.arange(fold_size)) % n_samples
-    
-    # Train set for final eval is everything EXCEPT eval indices
-    mask_eval = np.ones(n_samples, dtype=bool)
-    mask_eval[eval_inds] = False
-    X_tt = X[mask_eval] # "Test + Train" combined
-    Y_tt = Y[mask_eval]
-    X_eval = X[eval_inds]
-    Y_eval = Y[eval_inds]
-
-    # Precompute covariance for final fit
-    XtX_tt = X_tt.T @ X_tt
-
-    for i in range(n_targets):
-        # 1-Standard-Error Rule
-        thresh = mu_test[i, i_alpha_best[i]] - sd_test[i, i_alpha_best[i]]
-        candidates = np.where(mu_test[i] >= thresh)[0]
-        best_idx_corrected = candidates[-1] # Take the largest alpha in range
-        
-        Alpha_best[i] = alphas[best_idx_corrected]
-        
-        # Final Solve (Single solve, so standard solver is fine)
-        reg_mat = XtX_tt + Alpha_best[i] * np.eye(n_features)
-        rhs = X_tt.T @ Y_tt[:, i]
-        W_best[:, i] = np.linalg.solve(reg_mat, rhs)
-        
-        # Eval Score
-        y_hat_val = X_eval @ W_best[:, i]
-        VAF_eval[i] = 1 - np.var(Y_eval[:, i] - y_hat_val) / np.var(Y_eval[:, i])
-
-    # Final Full Prediction
-    Y_hat = X @ W_best
-    VAF_total = 1 - np.var(Y - Y_hat,axis=0) / np.var(Y,axis=0)
-    return Y_hat, W_best, Alpha_best, VAF_total, VAF_train, VAF_test, VAF_eval
 
 
 def calc_deriv(x, time):
@@ -1081,4 +652,54 @@ def resample_running_for_trial(running_speed_df, t_start, t_stop,
 
     print("Helper functions defined ✓")
 
+
+def update_stimulus_table(stimulus_table):
+    stimulus_table_check = stimulus_table.copy()
+    stimulus_table_check = stimulus_table_check[
+        ~(
+            stimulus_table_check['stim_name'].astype(str).str.lower().eq('spontaneous')
+            & ((stimulus_table_check['stop_time'] - stimulus_table_check['start_time']) < 2)
+        )
+    ].copy().reset_index(drop=True)
+    stimulus_table_check.loc[stimulus_table_check['stim_name'].astype(str).str.lower().eq('spontaneous'), 'stop_time'] = \
+        stimulus_table_check.loc[stimulus_table_check['stim_name'].astype(str).str.lower().eq('spontaneous'), 'stop_time'] -1
+    stimulus_table_check['gray_screen'] = stimulus_table_check['contrast'].isna()
+    stimulus_table_check.loc[stimulus_table_check['stim_name'].astype(str).str.lower().eq('spontaneous'), 'stim_type'] = 'GrayScreen'
+    stimulus_table_check.loc[
+        stimulus_table_check['gray_screen'] & stimulus_table_check['stim_type'].ne('GrayScreen'),
+        'stim_type'
+    ] = 'Catch'
+
+    stimulus_table_check['stim_index'] = pd.Series(np.nan, index=stimulus_table_check.index)
+    non_gray_mask = ~stimulus_table_check['gray_screen']
+    stimulus_table_check.loc[non_gray_mask, 'stim_index'] = np.arange(non_gray_mask.sum(), dtype=int)
+
+    stimulus_table_check['stim_index_block'] = pd.Series(np.nan, index=stimulus_table_check.index)
+    stimulus_table_check.loc[non_gray_mask, 'stim_index_block'] = (
+        stimulus_table_check.loc[non_gray_mask]
+        .groupby('stim_block')
+        .cumcount()
+        .to_numpy()
+    )
+
+    rows_with_gaps = []
+    for i in range(len(stimulus_table_check)):
+        curr_row = stimulus_table_check.iloc[i].copy()
+        rows_with_gaps.append(curr_row)
+
+        if i < len(stimulus_table_check) - 1:
+            next_row = stimulus_table_check.iloc[i + 1]
+            if next_row['start_time'] > curr_row['stop_time']:
+                gap_row = next_row.copy()
+                gap_row['start_time'] = curr_row['stop_time']
+                gap_row['stop_time'] = next_row['start_time']
+                gap_row['gray_screen'] = True
+                rows_with_gaps.append(gap_row)
+
+    if rows_with_gaps:
+        stimulus_table_check = pd.DataFrame(rows_with_gaps).reset_index(drop=True)
+
+    stimulus_table_check['duration'] = stimulus_table_check['stop_time'] - stimulus_table_check['start_time']
+
+    return stimulus_table_check
 
