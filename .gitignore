@@ -1,5 +1,6 @@
 # Data files (too large for GitHub)
 Data/
+*.zarr/
 
 # Python
 __pycache__/

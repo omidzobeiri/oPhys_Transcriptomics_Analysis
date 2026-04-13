@@ -42,6 +42,11 @@ def naka_rushton(c, Rmax, c50, n, R0):
     return R0 + Rmax * (c**n) / (c**n + c50**n)
 
 
+def normalization_model(c, Rmax, sigma, n):
+    """Divisive normalization: R(c) = Rmax * c^n / (sigma^n + c^n)"""
+    return Rmax * (c**n) / (sigma**n + c**n)
+
+
 def compute_tuning_for_session(dff, trial_info, time_relative, n_cells):
     """Compute all tuning metrics for one session.
 
