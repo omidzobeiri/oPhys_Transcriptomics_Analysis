@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -e
+
+# 1. Source the conda profile to enable 'conda activate' in this script
+# Note: /opt/conda is the standard path, adjust if your miniconda is elsewhere
+source /opt/conda/etc/profile.d/conda.sh
+
+# 2. Setup ophys_env
+# Added -y to avoid interactive prompts during build
+conda create -y -n ophys_env python=3.12
+conda activate ophys_env
+pip install --no-cache pandas matplotlib scipy tifffile zarr opencv-python scikit-learn scikit-image codeocean aind_session ipykernel tables anndata
+pip install -U universal-pathlib
+pip install --upgrade hdmf_zarr
+
+# 3. Setup xenium_env
+conda create -y -n xenium_env python=3.12
+conda activate xenium_env
+pip install spatialdata[extra]==0.6.1 scanpy==1.11.5 ipykernel
+pip install --upgrade spatialdata xarray-schema
+# installing git repos
+# cd /
+# git clone https://github.com/AllenNeuralDynamics/comb
+# cd comb
+# pip install -e .
+# #git checkout 21b9cae9431f7f83e1973af6f1fc1ecd40fc765d
+# git checkout for_gcamp_validation
+
+# cd /
+# git clone https://github.com/AllenNeuralDynamics/lamf-analysis
+# cd lamf-analysis
+# pip install -e .   
