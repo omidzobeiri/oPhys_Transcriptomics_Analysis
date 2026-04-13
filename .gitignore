@@ -18,6 +18,9 @@ env/
 # Jupyter
 .ipynb_checkpoints/
 
+# Scratch
+scratch/
+
 # OS files
 .DS_Store
 Thumbs.db
