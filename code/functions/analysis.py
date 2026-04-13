@@ -1,7 +1,9 @@
 """Analysis utilities: adaptation, spatial statistics, connectivity, and similarity."""
 
 import numpy as np
+from scipy.optimize import brentq
 from scipy.spatial.distance import pdist, squareform
+from scipy.stats import nct, t
 from statsmodels.tsa.stattools import grangercausalitytests
 
 
@@ -235,6 +237,49 @@ def linear_CKA(X1, X2):
     hsic = np.trace(K1c @ K2c)
     norm = np.sqrt(np.trace(K1c @ K1c) * np.trace(K2c @ K2c))
     return hsic / norm if norm > 0 else 0
+
+
+def min_detectable_pearson_r(n, alpha=0.05, power=0.8, two_tailed=True):
+    """Minimum detectable Pearson r given sample size, alpha, and power.
+
+    Parameters
+    ----------
+    n : int
+        Sample size.
+    alpha : float, optional
+        Significance level (default 0.05).
+    power : float, optional
+        Desired statistical power (default 0.8).
+    two_tailed : bool, optional
+        If True (default), use a two-tailed test. If False, use a one-tailed
+        upper-tail test (positive-effect direction).
+
+    Returns
+    -------
+    float
+        Minimum detectable Pearson r (absolute effect size).
+    """
+    if n < 4:
+        raise ValueError('n must be >= 4 for correlation power calculations.')
+    if not (0 < alpha < 1):
+        raise ValueError('alpha must be between 0 and 1.')
+    if not (0 < power < 1):
+        raise ValueError('power must be between 0 and 1.')
+
+    df = n - 2
+    tcrit = t.ppf(1 - alpha / 2.0, df) if two_tailed else t.ppf(1 - alpha, df)
+
+    def _power_at_r(r):
+        r = max(min(r, 1 - 1e-12), 1e-12)
+        ncp = r * np.sqrt(df / (1 - r**2))
+        if two_tailed:
+            return 1.0 - (nct.cdf(tcrit, df, ncp) - nct.cdf(-tcrit, df, ncp))
+        return 1.0 - nct.cdf(tcrit, df, ncp)
+
+    if _power_at_r(1e-12) >= power:
+        return 0.0
+
+    return brentq(lambda r: _power_at_r(r) - power, 1e-12, 1 - 1e-12)
 
 
 

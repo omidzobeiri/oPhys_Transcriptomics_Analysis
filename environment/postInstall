@@ -9,7 +9,7 @@ source /opt/conda/etc/profile.d/conda.sh
 # Added -y to avoid interactive prompts during build
 conda create -y -n ophys_env python=3.12
 conda activate ophys_env
-pip install --no-cache pandas matplotlib scipy tifffile zarr opencv-python scikit-learn scikit-image codeocean aind_session ipykernel tables anndata
+pip install --no-cache pandas matplotlib scipy tifffile zarr opencv-python statsmodels scikit-learn scikit-image codeocean aind_session ipykernel tables anndata
 pip install -U universal-pathlib
 pip install --upgrade hdmf_zarr
 

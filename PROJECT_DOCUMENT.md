@@ -35,8 +35,8 @@ This project investigates the relationship between transcriptomic cell-type iden
 
 | Session | Stimulus | Details |
 |---|---|---|
-| **Exp 1** | Natural movie clips | ~1,000 unique clips (2–5 sec each); ~20 clips repeated 20 times for reliability estimation |
-| **Exp 2–4** | Full-field drifting gratings | 8 directions × 5 contrasts (0.05, 0.1, 0.2, 0.4, 0.8) × 5 temporal frequencies (1, 2, 4, 8, 15 Hz); spatial frequency fixed at 0.04 cpd; 2-second trials |
+| **Session 0** | Natural movie clips | ~1,000 unique clips (2–5 sec each); ~20 clips repeated 20 times for reliability estimation |
+| **Session 1–3** | Full-field drifting gratings | 8 directions × 5 contrasts (0.05, 0.1, 0.2, 0.4, 0.8) × 5 temporal frequencies (1, 2, 4, 8, 15 Hz); spatial frequency fixed at 0.04 cpd; 2-second trials |
 
 **Context/Block Structure (Grating Sessions):**
 
@@ -63,8 +63,9 @@ Each `{mouse_id}_multimodal_data.zarr` combines all modalities in a single hiera
   - `size_x_um`, `size_y_um`, `size_z_um`: Bounding-box dimensions
   - `angle_deg_xy`: Orientation angle of cell body in the XY imaging plane (−180° to +180°)
 - **`transcriptomics/`**:
-  - `cell_type/`: 13 arrays — hierarchical labels (class/subclass/supertype/cluster) with `_name`, `_label`, and `_bootstrapping_probability` at each level, plus `cluster_alias`
+  - `cell_type/`: 13 arrays — discrete hierarchical labels (class/subclass/supertype/cluster) with `_name`, `_label`, and `_bootstrapping_probability` at each level, plus `cluster_alias`
   - `cellxgene/`: 299 gene expression arrays (float64, one per gene)
+  - `transciptomic_pc/`: first five principle components `Gaba_tPC1-5` to `Glut_PC1-5`, computed based on inhibitory and excitatory populations, respectively. 
 - **`ophys/drifting_gratings/{session_1,session_2,session_3}/`**: Each session contains:
   - **`stim_aligned_dff/GratingStim/`**: Trial-resolved calcium activity
     - `dff`: (2186 trials, 41 timepoints, n_cells) — ΔF/F at 10 Hz, −1 s to +3 s
@@ -101,9 +102,111 @@ Each `{mouse_id}_multimodal_data.zarr` combines all modalities in a single hiera
 | Lamp5 GABAergic | 4 | 9 | 9 | ~1% |
 | L5 ET CTX Glut | — | — | 23 | <1% |
 
+
+### 1.6 running behaviour
+
+| Mouse id | Running trials | Stationary trials | Running % |
+|---|---|---|---|
+| 778174 | 1016 | 2263 | 31% |
+| 786297 | 885 | 2394 | 27% |
+| 797371 | 82 | 3197 | 2.5% |
+
 ---
 
 ## 2. Scientific Questions, Hypotheses, and Analysis Plans
+
+## Statistical Considerations
+
+### Power Considerations
+
+The ability to detect effects depends on sample size. For Pearson correlations at alpha=0.05 (two-tailed), the minimum detectable effect size (r) at 80% power is approximately:
+
+| Scope | n | Min detectable r |
+|---|---:|---:|
+| Excitatory pooled | 2551 | ~0.04 |
+| Inhibitory pooled | 273 | ~0.12 |
+| Within Pvalb | 120 | ~0.18 |
+| Within Vip | 75 | ~0.23 |
+| Within Sst | 56 | ~0.26 |
+| Within Lamp5 | 22 | ~0.42 |
+
+This power asymmetry has important implications. A null result in Vip (n=75) does not necessarily indicate absence of an effect; it indicates effects smaller than r=0.23 are below the nominal detection threshold at this sample size. The effects detected within Vip (r=0.27 to 0.33) are near the edge of detectability, suggesting additional structure may exist below threshold. In contrast, excitatory analyses (n=2551) can detect very small effects, so significant findings are less ambiguous statistically, but effect sizes (r=0.04 to 0.24) still span a wide range of practical importance.
+
+For nested permutation tests, power depends on the number of cells per group at the finest hierarchy level being tested. Because many inhibitory supertypes contain fewer than 10 cells, supertype-level inference within inhibitory populations is underpowered. The Pvalb cluster comparison (65 vs 40 cells in the two main clusters) is currently the best-powered within-subclass inhibitory comparison.
+
+### Multiple Comparisons
+
+The analysis includes many statistical tests. Approximate test counts by family are:
+
+| Test family | Scope | Approximate number of tests |
+|---|---|---:|
+| Nested permutation | 2 populations x 2 levels x 10 metrics | ~40 |
+| Within-subclass permutation | 4 subclasses x 10 metrics | ~40 |
+| tPC correlation (pooled) | 2 populations x 10 metrics x 5 tPCs | ~100 |
+| tPC correlation (within-subclass) | 7 subclasses x 10 metrics x 5 tPCs | ~350 |
+
+No formal multiple-comparison correction is applied in the exploratory phase. In a confirmatory phase, correction methods (e.g., Bonferroni or Benjamini-Hochberg FDR) should be applied by test family.
+
+### Proposed Statistical Tests
+
+1. **Nested permutation test**
+Purpose: test whether cell-type labels at each level of the Allen taxonomy explain variance in a functional metric, after accounting for the parent level.
+
+Computation framework (following Bugeon et al., 2022):
+- **Level 1 (subclass):** test statistic is between-subclass sum of squares, computed as weighted deviation of subclass means from the grand mean. Null distribution is built by globally permuting subclass labels across all cells (10,000 permutations).
+- **Level 2 (supertype within subclass):** test statistic is the sum of between-supertype sums of squares computed separately within each subclass, then aggregated. Null distribution is built by permuting supertype labels within each subclass (10,000 permutations), preserving subclass structure.
+- **Level 3 (cluster within supertype):** extension by the same conditional-permutation logic.
+
+Interpretation: each level asks whether finer labels add explanatory power given the coarser parent label.
+
+Planned scope: run separately for inhibitory cells (n=273; 4 subclasses) and excitatory cells (n=2551; 3 subclasses).
+
+2. **Within-subclass permutation test**
+Purpose: test whether supertypes or clusters differ within one subclass. This is a focused complement to omnibus hierarchical tests, especially when inhibitory omnibus tests are underpowered.
+
+Computation:
+- Restrict to one subclass (e.g., Pvalb).
+- Exclude groups with fewer than 3 cells.
+- Test statistic is between-group sum of squares.
+- Null distribution is generated by permuting group labels 10,000 times.
+- For significant omnibus effects, conduct pairwise Mann-Whitney U post-hoc comparisons.
+
+Planned scope: Pvalb (n=120) at supertype and cluster levels; Vip (n=75) and Sst (n=56) where group sizes allow. Lamp5 (n=22) is typically too sparse for stable supertype-level testing.
+
+3. **Pearson correlation with tPC scores**
+Purpose: test whether continuous transcriptomic variation predicts continuous functional variation.
+
+Computation:
+- For each (tPC, metric) pair, compute Pearson correlation coefficient $r$ and p-value over cells with non-null values in both variables.
+- Evaluate at two scopes:
+   - **Pooled scope:** all excitatory cells together or all inhibitory cells together.
+   - **Within-subclass scope:** restricted to one subclass, to assess transcriptomic gradients within cell type.
+
+Planned axes: all 5 class-specific tPCs (GABA_tPC1-5 for inhibitory cells; Glut_tPC1-5 for excitatory cells). Because PCA axes are orthogonal by construction, each correlation probes an independent dimension of transcriptomic variation.
+
+4. **Group-comparison and post-hoc tests**
+ANOVA, Kruskal-Wallis, Dunn's post-hoc tests, paired t-tests, Wilcoxon signed-rank tests, and Mann-Whitney U tests are proposed for tuning, temporal dynamics, adaptation, and morphology comparisons.
+
+5. **Correlation and partial-correlation analyses**
+Spearman and Pearson correlations, plus partial correlations, are proposed for gene-function links, tPC-function links, spatial/noise-correlation analyses, and cross-day stability analyses.
+
+6. **Permutation and bootstrap inference**
+Beyond the nested and within-subclass permutation tests, additional label-shuffling permutation tests and bootstrap confidence intervals are already proposed in spatial and connectivity analyses.
+
+7. **Regression-based modeling and model-comparison tests**
+OLS regression, LASSO/Elastic-Net regularized regression, and F-tests for incremental model fit (e.g., $\Delta R^2$) are already proposed in transcriptomic-function and running-modulation analyses.
+
+8. **Classification and decoding statistics**
+Logistic regression, Random Forest classifiers, and stimulus decoders (LDA and SVM-RBF) are already proposed for cell-type prediction and representational readout analyses.
+
+9. **Representational-geometry comparisons**
+Representational similarity analysis (RSA), Procrustes alignment, and centered kernel alignment (CKA) are already proposed for comparing coding geometry across cell types, days, and model-vs-data representations.
+
+10. **Categorical composition tests**
+Chi-squared tests are already proposed for evaluating non-uniform distributions and non-random subclass composition in assemblies.
+
+11. **Time-series directed-influence tests**
+Granger-causality analyses with F-tests for directed edges are already proposed in connectivity-domain analyses.
 
 Questions are organized into **six thematic domains** (Broad → Specific), each with testable hypotheses and detailed analysis plans.
 
@@ -117,8 +220,6 @@ Questions are organized into **six thematic domains** (Broad → Specific), each
 
 #### A1. Do transcriptomically defined cell types have distinct tuning properties?
 
-**Hypothesis A1:** Neurons within the same transcriptomic subclass (e.g., L4/5 IT, L2/3 IT, Pvalb, Sst, Vip, Lamp5) share more similar orientation selectivity, contrast response functions, and temporal frequency tuning than neurons across subclasses, but significant functional heterogeneity exists within subclasses that maps onto finer taxonomic levels (supertype, cluster).
-
 **Analysis Plan:**
 1. **Compute tuning curves per cell:**
    - **Orientation tuning:** For each cell, average ΔF/F across trials for each of the 8 directions. Fit a double-Gaussian (von Mises) model. Extract: preferred orientation, orientation selectivity index (OSI), direction selectivity index (DSI), tuning bandwidth.
@@ -127,7 +228,7 @@ Questions are organized into **six thematic domains** (Broad → Specific), each
 2. **Compare tuning parameters across cell types:**
    - ANOVA / Kruskal-Wallis tests across subclasses for each tuning parameter.
    - Post-hoc pairwise comparisons (e.g., Dunn's test) between specific subclass pairs.
-   - Repeat at supertype and cluster levels to assess if finer taxonomy explains more variance.
+   - Repeat at supertype and cluster levels (both globaly and within their subclass) to assess if finer taxonomy explains more variance.
 3. **Variance decomposition:**
    - Nested ANOVA: variance in tuning parameters explained by class → subclass → supertype → cluster.
    - Compare to shuffled cell-type labels (permutation test) to assess significance.
@@ -136,12 +237,11 @@ Questions are organized into **six thematic domains** (Broad → Specific), each
    - Violin/swarm plots of OSI, DSI, C50, preferred TF, split by subclass.
    - Hierarchical clustering dendrogram of cells based on tuning vectors, colored by transcriptomic label.
    - Confusion matrix: can you predict subclass from tuning parameters (logistic regression / random forest)?
+   - Confusion matrix: can you predict supertype of subclass within subclass from tuning parameters (logistic regression / random forest)?
 
 ---
 
-#### A2. Does gene expression predict functional response properties at the single-cell level?
-
-**Hypothesis A2:** Specific genes (beyond canonical markers like Pvalb, Sst, Vip) predict quantitative aspects of neural tuning, particularly ion channels (Kcnh5, Cacna2d2), neuropeptides (Cck, Npy, Penk), and synaptic molecules (Syt2, Cbln4, Nrn1).
+#### A2.1 Does gene expression predict functional response properties at the single-cell level?
 
 **Analysis Plan:**
 1. **Gene-tuning correlation analysis:**
@@ -161,11 +261,57 @@ Questions are organized into **six thematic domains** (Broad → Specific), each
    - Heatmap: genes × tuning parameters, clustered on both axes.
    - Gene module–functional property association matrix.
 
+#### A2.2 Does transcriptomic principal component structure predict cell-type identity and functional properties?
+
+**Analysis Plan:**
+
+1. **Load and organize tPC data:**
+   - Extract `transcriptomics/transciptomic_pc/{tPC1, tPC2, tPC3, tPC4, tPC5}` from zarr stores.
+   - Verify that tPCs are class-specific (separate for Glut and GABA); create unified tPC columns for each cell.
+   - Visualize tPC score distributions by subclass.
+
+2. **tPC prediction of subclass identity:**
+   - Train multiclass logistic regression and Random Forest on tPC1–5 scores to predict subclass labels.
+   - Compare classification accuracy to baseline (transcriptomics-based cell-type assignments from zarr).
+   - Quantify which tPCs contribute most to subclass separation (permutation importance).
+   - Perform leave-one-mouse-out cross-validation to test generalizability.
+
+3. **tPC prediction of functional properties:**
+   - Compute Spearman rank correlations between each tPC (tPC1–5) and each functional metric (OSI, DSI, C50, Rmax, preferred TF, response amplitude, reliability).
+   - Perform correlations globally (all cells), within-class (Glut vs. GABA), and within-subclass.
+   - Apply Benjamini-Hochberg FDR correction; identify significant tPC–function associations.
+
+4. **Multivariate functional prediction:**
+   - Fit OLS regression models for each tuning metric:
+     - Model 1: `tuning_metric ~ subclass_dummies` (subclass-only baseline).
+     - Model 2: `tuning_metric ~ subclass_dummies + tPC1 + tPC2 + tPC3 + tPC4 + tPC5` (subclass + tPCs).
+   - Compute incremental R² (ΔR²) from Model 1 to Model 2 per metric; test significance via F-test.
+   - Fit separate models for Glut and GABA classes; compare ΔR² across classes.
+
+5. **Conditional independence analysis:**
+   - For tPC–function associations significant at the population level, test whether the correlation remains significant after controlling for subclass (partial correlation).
+   - Identify tPC associations that are: (a) independent of subclass, (b) subclass-dependent, (c) within-subclass gradients.
+
+6. **tPC–morphology relationships:**
+   - Correlate tPC1–5 with cell-body morphological features (n_voxels, elongation, angle_deg_xy, size_pc1/2/3_um).
+   - Test whether tPCs associate with soma structure independently of cell type.
+
+7. **Cross-session stability:**
+   - For cells matched across sessions 1–3, correlate tPC scores (check if tPCs are session-stable or drift).
+   - If stable, recompute predictions per session; if drifting, model tPC drift as a nuisance factor.
+
+8. **Visualization:**
+   - tPC1 vs. tPC2 scatter, colored by subclass; overlay hulls per subclass.
+   - tPC1 vs. tPC2, colored by preferred orientation, OSI, or C50 (functional gradient overlay).
+   - Heatmap: subclass × tPC correlation (showing how much each subclass spans the tPC space).
+   - Bar charts: ΔR² from subclass-only to subclass+tPCs models, per tuning metric, split by class.
+   - Within-subclass scatter: tPC1 vs. OSI (or other metric), per subclass, with regression slopes.
+   - Permutation importance bar charts for logistic regression tPC→subclass model.
+   - Circular scatter (polar): tPC1 vs. preferred orientation, where radial distance = OSI.
+
 ---
 
 #### A3. How does transcriptomic identity shape population coding geometry?
-
-**Hypothesis A3:** Transcriptomically defined subclasses occupy distinct subspaces in population activity space, and the geometry of stimulus representations (e.g., orientation manifold) differs between excitatory subtypes and inhibitory subtypes.
 
 **Analysis Plan:**
 1. **Population activity vectors:**
@@ -186,8 +332,6 @@ Questions are organized into **six thematic domains** (Broad → Specific), each
 
 #### A4. Do cell types differ in their temporal response dynamics? *(10 Hz data)*
 
-**Hypothesis A4:** Different transcriptomic subclasses exhibit distinct temporal response profiles—inhibitory neurons (Pvalb, Sst) have shorter onset latencies and more transient responses than excitatory neurons (L2/3 IT, L4/5 IT). Within-subclass temporal diversity maps onto finer taxonomic levels and gene expression patterns.
-
 **Analysis Plan:**
 1. **PSTHs by subclass:** Using 10 Hz ΔF/F traces, compute trial-averaged peri-stimulus time histograms (PSTHs) for each cell, aligned to stimulus onset (−1 s to +3 s).
 2. **Temporal metrics:** Extract onset latency (first timepoint > baseline + 2 SD), peak time, peak amplitude, and transient/sustained index (TSI = [early − late] / [early + late]).
@@ -197,15 +341,76 @@ Questions are organized into **six thematic domains** (Broad → Specific), each
 
 ---
 
-### DOMAIN B: Contextual Adaptation and History Dependence
+### DOMAIN B: Behavioral State Modulation (Running)
 
-**Broad Question B:** *How do neural responses adapt to changing stimulus contexts, and do different cell types show distinct adaptation profiles?*
+**Broad Question B:** *How does locomotion (running) modulate visual responses, and is this modulation cell-type specific?*
 
 ---
 
-#### B1. Do responses differ between the first and second presentation of the same block type (context-dependent adaptation)?
+#### B1. Does running differentially modulate responses across cell types?
 
-**Hypothesis B1:** Responses to identical stimuli (matched contrast, TF, direction) differ between Block 0 vs. Block 2 (contrast-context blocks) and Block 1 vs. Block 3 (speed-context blocks), reflecting adaptation to the statistical structure of the preceding context. Inhibitory neurons (especially Sst and Vip) show stronger or faster contextual modulation than excitatory neurons.
+**Analysis Plan:**
+1. **Running-modulation index (RMI):**
+   - Split trials into running vs. stationary (using `is_running` / `avg_running` threshold).
+   - For each cell, compute RMI = (|R_run| – |R_stat|) / (|R_run| + |R_stat| + epsilon) per stimulus condition, then average.
+   - Alternative: fit linear model Response ~ running_speed + stimulus, extract running coefficient.
+2. **Gain vs. additive modulation:**
+   - For each cell, fit: R(stim, run) = a × R(stim) + b, where a = gain, b = offset.
+   - Compare gain vs. offset across subclasses.
+3. **Running modulation of tuning curves:**
+   - Compute full orientation × running interaction: does running change preferred orientation, OSI, or only amplitude?
+   - Is the multiplicative gain stimulus-feature-specific?
+4. **Visualization:**
+   - RMI distributions per subclass (violin/ridge plots).
+   - Tuning curves overlaid for running vs. stationary, per subclass.
+   - Scatter: stationary response vs. running response, per cell type (slope = gain).
+   - Population response heatmaps (cells sorted by RMI, split by type).
+
+---
+
+#### B2. Is the same VIP subtype that mediates running modulation also involved in context adaptation?
+
+**Analysis Plan:**
+1. **Multidimensional VIP characterization:**
+   - For each VIP cell, compute: (i) RMI, (ii) adaptation index (Block 0→2), (iii) cross-day drift metric.
+   - Cluster VIP cells by these three functional measures (k-means, hierarchical clustering).
+2. **Map to transcriptomic subtypes:**
+   - Test if functional VIP clusters correspond to supertype or cluster labels.
+   - Differential gene expression between VIP functional subtypes.
+3. **Correlation among modulations:**
+   - Within VIP cells: is RMI correlated with adaptation index? With cross-day drift?
+   - Compare to correlation in other inhibitory types (Sst, Pvalb, Lamp5).
+4. **Circuit-level analysis:**
+   - Examine if VIP cells with high running modulation are spatially near Sst cells with high suppression during running (spatial interaction analysis).
+5. **Visualization:**
+   - 3D scatter of VIP cells (RMI × adaptation × drift), colored by supertype/cluster.
+   - Gene expression heatmap for VIP subtypes, sorted by functional cluster.
+   - Network diagram of VIP-Sst-excitatory spatial proximity.
+
+---
+
+#### B4. Do transcriptomic principal components predict running-state modulation?
+
+
+**Analysis Plan:**
+1. **Load tPC data:** Read `Glut_tPC1–5` and `GABA_tPC1–5` (first 5 PCs of the gene expression matrix, computed separately per class) from zarr multimodal stores. Create unified `tPC1–5` columns.
+2. **Spearman correlations:** Correlate each tPC with RMI at three levels: whole-population, within-class (Glut vs GABA), and within-subclass (FDR-corrected).
+3. **Multivariate regression:** OLS models predicting RMI from subclass dummies alone vs. subclass + tPC1–5. F-test for incremental R² from tPCs, separately for Glut and GABA classes.
+4. **Visualization:**
+   - Heatmap of within-subclass tPC–RMI correlations.
+   - tPC1 vs tPC2 scatter colored by RMI (separate panels for Glut and GABA).
+   - tPC1 vs RMI scatter per subclass with regression lines.
+   - Violin plots of tPC1 split by running-enhanced / neutral / running-suppressed groups.
+
+---
+
+### DOMAIN C: Contextual Adaptation and History Dependence
+
+**Broad Question C:** *How do neural responses adapt to changing stimulus contexts, and do different cell types show distinct adaptation profiles?*
+
+---
+
+#### C1. Do responses differ between the first and second presentation of the same block type (context-dependent adaptation)?
 
 **Analysis Plan:**
 1. **Paired comparison (Block 0 vs. 2, Block 1 vs. 3):**
@@ -228,9 +433,7 @@ Questions are organized into **six thematic domains** (Broad → Specific), each
 
 ---
 
-#### B2. Does the context (contrast-varying vs. speed-varying) alter tuning curves?
-
-**Hypothesis B2:** In the contrast-context blocks, contrast response functions are sharper (lower C50) compared to responses at matched contrasts appearing in the speed-context blocks (where contrast is held at 0.8), reflecting contrast gain adaptation. Similarly, TF tuning shifts depending on context.
+#### C2. Does the context (contrast-varying vs. speed-varying) alter tuning curves?
 
 **Analysis Plan:**
 1. **Context-dependent tuning curves:**
@@ -246,119 +449,32 @@ Questions are organized into **six thematic domains** (Broad → Specific), each
 
 ---
 
-#### B3. Do responses change across days (multi-day adaptation / representational drift)?
-
-**Hypothesis B3:** Trial-averaged responses to identical stimuli show systematic drift across the 3 recording days, with the degree of drift varying by cell type—excitatory L2/3 cells show more drift than L4/5 cells, and inhibitory cells are more stable.
+#### C3. Do responses change across days (multi-day adaptation / representational drift)?
 
 **Analysis Plan:**
-1. **Cross-session tracking:**
-   - Use `cell_id - session_1/2/3` to match cells across days.
+1. **Drift metrics:**
    - Compute trial-averaged responses per stimulus condition per day.
-2. **Drift metrics:**
    - Pearson correlation of response vectors across days (day1 vs. day2, day1 vs. day3, day2 vs. day3).
    - Euclidean distance of tuning curves across days.
    - Signal correlation stability.
-3. **Cell-type differences in drift:**
+2. **Cell-type differences in drift:**
    - Compare stability metrics across subclasses.
-4. **Population-level drift:**
+3. **Population-level drift:**
    - Track movement of stimulus representations in PCA space across days.
    - CKA between population RDMs across days.
-5. **Visualization:**
+4. **Visualization:**
    - Scatter plots of cell-level response Day 1 vs. Day 3.
    - Stability index distributions per subclass.
    - Population PCA trajectories across days.
 
 ---
 
-#### B4. How does the temporal shape of responses change with within-block adaptation and block context? *(10 Hz data)*
-
-**Hypothesis B4:** Within-block adaptation manifests not just as reduced response amplitude but as a shift from transient to sustained temporal profiles. The contrast-context and speed-context blocks produce differently shaped PSTHs, with the contrast-context blocks eliciting more transient responses.
+#### C4. How does the temporal shape of responses change with within-block adaptation and block context? *(10 Hz data)*
 
 **Analysis Plan:**
 1. **Within-block PSTH evolution:** Compare PSTHs from early (first 20%) vs. late (last 20%) trials within each block. Quantify changes in TSI, peak amplitude, and temporal shape.
-2. **Context-dependent temporal shape:** Compare TSI between contrast-context (blocks 0, 2) and speed-context (blocks 1, 3) blocks for each cell. Paired Wilcoxon tests per subclass.
-3. **Cell-type specificity:** Determine whether adaptation-related temporal changes are uniform across subclasses or preferentially affect certain types.
-
----
-
-### DOMAIN C: Behavioral State Modulation (Running)
-
-**Broad Question C:** *How does locomotion (running) modulate visual responses, and is this modulation cell-type specific?*
-
----
-
-#### C1. Does running differentially modulate responses across cell types?
-
-**Hypothesis C1:** Running multiplicatively increases responses in excitatory neurons (gain modulation) and Vip interneurons, while Sst interneurons are suppressed during running; Pvalb neurons show mixed or minimal modulation. This is consistent with a disinhibitory circuit: running → Vip activation → Sst suppression → excitatory disinhibition.
-
-**Analysis Plan:**
-1. **Running-modulation index (RMI):**
-   - Split trials into running vs. stationary (using `is_running` / `avg_running` threshold).
-   - For each cell, compute RMI = (R_run – R_stat) / (R_run + R_stat) per stimulus condition, then average.
-   - Alternative: fit linear model Response ~ running_speed + stimulus, extract running coefficient.
-2. **Gain vs. additive modulation:**
-   - For each cell, fit: R(stim, run) = a × R(stim) + b, where a = gain, b = offset.
-   - Compare gain vs. offset across subclasses.
-3. **Running modulation of tuning curves:**
-   - Compute full orientation × running interaction: does running change preferred orientation, OSI, or only amplitude?
-   - Is the multiplicative gain stimulus-feature-specific?
-4. **Visualization:**
-   - RMI distributions per subclass (violin/ridge plots).
-   - Tuning curves overlaid for running vs. stationary, per subclass.
-   - Scatter: stationary response vs. running response, per cell type (slope = gain).
-   - Population response heatmaps (cells sorted by RMI, split by type).
-
----
-
-#### C2. Is the same VIP subtype that mediates running modulation also involved in context adaptation?
-
-**Hypothesis C2 (Integrative — your VIP hypothesis):** A specific transcriptomic subtype of VIP interneurons (identifiable at the supertype or cluster level) simultaneously mediates: (a) running-state gain modulation, (b) context-dependent adaptation between blocks, and (c) experience-dependent changes across days. If so, this subtype has specific molecular markers (gene expression signature) that distinguish it from other VIP subtypes.
-
-**Analysis Plan:**
-1. **Multidimensional VIP characterization:**
-   - For each VIP cell, compute: (i) RMI, (ii) adaptation index (Block 0→2), (iii) cross-day drift metric.
-   - Cluster VIP cells by these three functional measures (k-means, hierarchical clustering).
-2. **Map to transcriptomic subtypes:**
-   - Test if functional VIP clusters correspond to supertype or cluster labels.
-   - Differential gene expression between VIP functional subtypes.
-3. **Correlation among modulations:**
-   - Within VIP cells: is RMI correlated with adaptation index? With cross-day drift?
-   - Compare to correlation in other inhibitory types (Sst, Pvalb, Lamp5).
-4. **Circuit-level analysis:**
-   - Examine if VIP cells with high running modulation are spatially near Sst cells with high suppression during running (spatial interaction analysis).
-5. **Visualization:**
-   - 3D scatter of VIP cells (RMI × adaptation × drift), colored by supertype/cluster.
-   - Gene expression heatmap for VIP subtypes, sorted by functional cluster.
-   - Network diagram of VIP-Sst-excitatory spatial proximity.
-
----
-
-#### C3. Does moment-to-moment running speed modulate neural activity at sub-second timescales? *(10 Hz data)*
-
-**Hypothesis C3:** Neural ΔF/F tracks instantaneous running speed with a characteristic lag of 100–300 ms, and this coupling is strongest in Vip neurons and weakest in Pvalb neurons. Running onset events trigger rapid ΔF/F changes that differ in latency and sign across subclasses.
-
-**Analysis Plan:**
-1. **Within-trial cross-correlation:** Compute cross-correlation between running speed and ΔF/F at ±500 ms lags within the stimulus period (10 Hz resolution). Average across trials per cell.
-2. **Peak lag and coupling strength:** Extract peak correlation lag and magnitude per cell; compare across subclasses.
-3. **Time-resolved gain curves:** At each 500 ms time window within the trial, bin trials by running speed and plot mean ΔF/F as a function of speed. Test whether the speed–response relationship changes over the course of the trial.
-4. **Running-onset-triggered average:** Identify trials where running speed crosses a threshold during the stimulus; align ΔF/F to this onset event and compute onset-triggered averages per subclass.
-
----
-
-#### C4. Do transcriptomic principal components predict running-state modulation?
-
-**Hypothesis C4:** The first principal component of gene expression (tPC1, computed separately for glutamatergic and GABAergic classes) captures a gradient of running modulation strength that is not fully explained by subclass identity. Within excitatory neurons, tPC1 gradient correlates with RMI; within inhibitory neurons, tPC1 separates running-enhanced from running-suppressed cells.
-
-**Analysis Plan:**
-1. **Load tPC data:** Read `Glut_tPC1–5` and `GABA_tPC1–5` (first 5 PCs of the gene expression matrix, computed separately per class) from zarr multimodal stores. Create unified `tPC1–5` columns.
-2. **Spearman correlations:** Correlate each tPC with RMI at three levels: whole-population, within-class (Glut vs GABA), and within-subclass (FDR-corrected).
-3. **Multivariate regression:** OLS models predicting RMI from subclass dummies alone vs. subclass + tPC1–5. F-test for incremental R² from tPCs, separately for Glut and GABA classes.
-4. **Visualization:**
-   - Heatmap of within-subclass tPC–RMI correlations.
-   - tPC1 vs tPC2 scatter colored by RMI (separate panels for Glut and GABA).
-   - tPC1 vs RMI scatter per subclass with regression lines.
-   - Violin plots of tPC1 split by running-enhanced / neutral / running-suppressed groups.
-
+2. **Context-dependent temporal shape:** Compare TSI between contrast-context (blocks 0, 2) and speed-context (blocks 1, 3) blocks for each cell. Paired Wilcoxon tests per subclass. repeat for supertype and cluster within each sublass.
+3. **Cell-type specificity:** Determine whether adaptation-related temporal changes are uniform across subclasses or preferentially affect certain types. repeat for supertype and cluster within each sublass.
 ---
 
 ### DOMAIN D: Spatial Organization and Micro-Architecture
@@ -368,8 +484,6 @@ Questions are organized into **six thematic domains** (Broad → Specific), each
 ---
 
 #### D1. Is there spatial clustering of functionally similar neurons beyond what cell-type identity predicts?
-
-**Hypothesis D1:** Neurons with similar orientation preferences are spatially clustered (salt-and-pepper with local bias) in L2/3, but less so in L4/5. When controlling for cell type, residual functional similarity correlates with spatial proximity (within ~50–100 µm).
 
 **Analysis Plan:**
 1. **Spatial autocorrelation of tuning:**
@@ -389,8 +503,6 @@ Questions are organized into **six thematic domains** (Broad → Specific), each
 ---
 
 #### D2. Does cell-type composition vary across the columnar extent and relate to functional properties?
-
-**Hypothesis D2:** The ratio of inhibitory to excitatory neurons, and the specific inhibitory subclass distribution, varies systematically with cortical depth. Microcolumnar neighborhoods (~50 µm radius) with higher Vip density show stronger running modulation and context adaptation in local excitatory cells.
 
 **Analysis Plan:**
 1. **Depth profile of cell types:**
@@ -414,8 +526,6 @@ Questions are organized into **six thematic domains** (Broad → Specific), each
 
 #### E1. Do noise correlations reveal cell-type-specific connectivity motifs?
 
-**Hypothesis E1:** Noise correlations are strongest between neurons of the same subclass (especially within Pvalb and within excitatory subtypes), and weakest between Vip and Sst neurons (consistent with mutual inhibition). Noise correlation magnitude predicts spatial proximity and shared gene expression.
-
 **Analysis Plan:**
 1. **Noise correlation matrix:**
    - For each stimulus condition, compute trial-by-trial residuals (subtract trial-averaged response).
@@ -434,8 +544,6 @@ Questions are organized into **six thematic domains** (Broad → Specific), each
 ---
 
 #### E2. Can cross-correlations and Granger causality at 10 Hz reveal directed functional interactions?
-
-**Hypothesis E2:** Directed functional connectivity (inferred via Granger causality and sub-second cross-correlations on 10 Hz ΔF/F traces) reveals asymmetric interactions: L4/5 → L2/3 feedforward drive, and Sst → excitatory inhibitory influence. E–E pairs show narrow symmetric cross-correlograms, while E–I pairs are asymmetric with I cells lagging E cells.
 
 **Analysis Plan:**
 1. **Sub-second cross-correlations:**
@@ -460,8 +568,6 @@ Questions are organized into **six thematic domains** (Broad → Specific), each
 
 #### E3. How does population coupling relate to cell type and spatial position?
 
-**Hypothesis E3:** Population coupling (correlation of single-cell activity with population mean) varies systematically: Pvalb neurons are most coupled (broad inhibition), Sst and Vip are less coupled, and among excitatory neurons, coupling decreases from L4/5 to L2/3. Highly coupled neurons are more centrally located in the field of view and express higher levels of synaptic markers.
-
 **Analysis Plan:**
 1. **Population coupling index:**
    - For each cell, compute correlation of its ΔF/F with the mean ΔF/F of all other cells (exclude self).
@@ -476,8 +582,6 @@ Questions are organized into **six thematic domains** (Broad → Specific), each
 ---
 
 #### E4. Does spontaneous activity structure during grey-screen epochs reveal cell-type-specific network dynamics?
-
-**Hypothesis E4:** During extended spontaneous activity (360 s grey-screen epochs), population activity organizes into recurring assemblies whose composition reflects transcriptomic cell-type identity. Pvalb neurons participate broadly across assemblies while Sst neurons are selective, and assembly transitions occur at timescales that vary with running state.
 
 **Analysis Plan:**
 1. **Assembly detection:**
@@ -500,8 +604,6 @@ Questions are organized into **six thematic domains** (Broad → Specific), each
 ---
 
 #### E5. Do catch-trial responses reveal cell-type-specific expectation signals?
-
-**Hypothesis E5:** During catch trials (unexpected blank stimuli interleaved among gratings), specific cell types show systematic response deviations from baseline — particularly Sst neurons show suppression (release from stimulus-driven inhibition) and Vip neurons show transient activation (expectation/prediction signals). These catch-trial responses correlate with stimulus context (which block type the catch occurred in).
 
 **Analysis Plan:**
 1. **Catch-trial response profiles:**
@@ -530,8 +632,6 @@ Questions are organized into **six thematic domains** (Broad → Specific), each
 
 #### F1. Can a task-trained RNN reproduce cell-type-specific tuning and connectivity?
 
-**Hypothesis F1:** An RNN constrained with Dale's law (separate E/I units) and trained to perform stimulus classification reproduces the cell-type-specific tuning curves, noise correlations, and context-dependent adaptation observed in the data—but only when initialized with the observed E/I ratio and connectivity structure.
-
 **Analysis Plan:**
 1. **RNN architecture:**
    - Continuous-time RNN with ~1,000 units, split into E and I (matching observed ratios: ~90% E, ~4% Pvalb-like, ~3% Vip-like, ~2% Sst-like, ~1% Lamp5-like).
@@ -558,7 +658,6 @@ Questions are organized into **six thematic domains** (Broad → Specific), each
 
 #### F2. Can an RNN trained to predict neural activity learn biologically meaningful representations?
 
-**Hypothesis F2:** An RNN trained to predict the population's ΔF/F activity from stimulus and running inputs develops internal representations whose geometry matches the observed population coding geometry, and whose recurrent connectivity structure mirrors the inferred functional connectivity from the data.
 
 **Analysis Plan:**
 1. **Data-driven RNN:**
@@ -576,8 +675,6 @@ Questions are organized into **six thematic domains** (Broad → Specific), each
 ---
 
 #### F3. Can an RNN predict full temporal trajectories of population ΔF/F? *(10 Hz data)*
-
-**Hypothesis F3:** A 2-layer GRU-RNN trained on the 10 Hz trial-resolved ΔF/F (41 timepoints per trial, from −1 s to +3 s) learns to reproduce cell-type-specific temporal dynamics—including transient vs. sustained profiles, onset latencies, and running-speed-dependent modulation. Time-resolved CKA between RNN hidden states and real population activity peaks during the stimulus period and differs across time windows.
 
 **Analysis Plan:**
 1. **Temporal trajectory RNN:**
@@ -606,7 +703,6 @@ Questions are organized into **six thematic domains** (Broad → Specific), each
 
 #### G1. Do cell types differ in the relative balance of visual vs. state-driven activity?
 
-**Hypothesis G1:** Excitatory neurons (L2/3 IT, L4/5 IT) are primarily driven by visual stimuli (high `score_visual`, low `score_state`), while Vip neurons are disproportionately state-driven (high `score_state` relative to `score_visual`). Pvalb neurons show both high visual and state scores, consistent with their role integrating feedforward and modulatory inputs.
 
 **Analysis Plan:**
 1. **Visual vs. state R² decomposition:**
@@ -627,8 +723,6 @@ Questions are organized into **six thematic domains** (Broad → Specific), each
 
 #### G2. What do condition-specific GLM kernels reveal about temporal encoding across cell types?
 
-**Hypothesis G2:** GLM temporal kernels (30 basis functions per stimulus condition) reveal that L4/5 cells have sharper, more transient kernels than L2/3 cells, and that high-contrast conditions evoke faster kernel peaks than low-contrast conditions. Kernel shape systematically varies with temporal frequency in a cell-type-specific manner.
-
 **Analysis Plan:**
 1. **Extract and characterize per-condition kernels:**
    - For each cell, load the 30-dimensional coefficient vector for each stimulus condition.
@@ -648,7 +742,6 @@ Questions are organized into **six thematic domains** (Broad → Specific), each
 
 #### G3. Can GLM residuals (y − y_hat) reveal unmodeled computation?
 
-**Hypothesis G3:** GLM residuals (activity not explained by visual + state models) contain structure that reflects nonlinear stimulus interactions and inter-neuronal coupling. Residual correlations between cell pairs are stronger for same-type pairs and spatially proximal neurons, suggesting the GLM residuals capture circuit-level interactions beyond stimulus-driven and state-driven components.
 
 **Analysis Plan:**
 1. **Residual computation:**
@@ -676,8 +769,6 @@ Questions are organized into **six thematic domains** (Broad → Specific), each
 
 #### H1. Does cell-body morphology predict transcriptomic cell type?
 
-**Hypothesis H1:** Cell-body morphological features (volume, elongation, orientation) differ systematically across transcriptomic subclasses — particularly, Pvalb neurons are larger (more voxels) and rounder (lower PC1/PC2 ratio) than excitatory n eurons, while Sst neurons show more elongated somas. Morphological features can predict subclass identity above chance.
-
 **Analysis Plan:**
 1. **Morphological feature comparison:**
    - Load `n_voxels`, `size_pc1_um`, `size_pc2_um`, `size_pc3_um`, and `angle_deg_xy` from zarr morphology data.
@@ -696,8 +787,6 @@ Questions are organized into **six thematic domains** (Broad → Specific), each
 ---
 
 #### H2. Does soma morphology correlate with functional properties independently of cell type?
-
-**Hypothesis H2:** Within excitatory subclasses, larger cell bodies (more voxels) correspond to higher response amplitudes and stronger visual drive (GLM score_visual), while soma orientation angle in the XY plane correlates with preferred stimulus orientation — reflecting a potential link between soma geometry and dendritic arbor orientation.
 
 **Analysis Plan:**
 1. **Within-subclass morphology-function correlation:**
@@ -719,14 +808,14 @@ Questions are organized into **six thematic domains** (Broad → Specific), each
 | A2 | Transcriptomic–Function | Gene expression predicts tuning | Specific genes (channels, neuropeptides) predict quantitative tuning | Spearman correlations (FDR), LASSO, gene modules | Volcano plots, heatmaps, scatter plots |
 | A3 | Transcriptomic–Function | Population coding geometry by type | Subclasses occupy distinct activity subspaces | PCA/UMAP, RSA/CKA, decoding (LDA/SVM) | Embedding plots, RDMs, decoding curves |
 | **A4** | **Transcriptomic–Function** | **Cell-type temporal dynamics** | **Inhibitory onset faster, more transient than excitatory** | **10 Hz PSTH, onset latency, TSI, temporal clustering** | **PSTHs by subclass, temporal cluster composition** |
-| B1 | Context Adaptation | Block-to-block adaptation | Inhibitory cells (Vip, Sst) show stronger adaptation | Paired comparisons, adaptation index, trial dynamics | Paired scatter, adaptation distributions, time courses |
-| B2 | Context Adaptation | Context alters tuning | Contrast context sharpens CRF; TF context shifts TF tuning | CRF/TF curve comparison, normalization model fits | Context-overlaid tuning curves, normalization fits |
-| B3 | Context Adaptation | Multi-day drift | L2/3 drifts more than L4/5; inhibitory stable | Cross-day correlation, PCA tracking, CKA | Day-vs-day scatter, PCA trajectories |
-| **B4** | **Context Adaptation** | **Within-trial temporal adaptation** | **Adaptation shifts PSTH from transient to sustained** | **10 Hz early vs late trial PSTH, TSI by block context** | **PSTH evolution, context-dependent TSI** |
-| C1 | Running / State | Cell-type running modulation | Vip↑, Sst↓, excitatory gain modulation | RMI, gain/offset decomposition | Violin plots, tuning curves run vs. stat |
-| C2 | Running / State (VIP) | Same VIP subtype for all? | One VIP cluster drives running + adaptation + drift | Multi-feature clustering, differential expression | 3D scatter, gene heatmaps |
-| **C3** | **Running / State** | **Moment-to-moment running coupling** | **ΔF/F tracks running with 100–300 ms lag; Vip strongest** | **10 Hz cross-correlation, running-onset-triggered avg** | **CCGs by subclass, time-resolved gain curves** |
-| C4 | Running / State | tPCs predict running modulation | tPC1 gradient correlates with RMI beyond subclass | Spearman, OLS (subclass + tPCs), F-test | Heatmap, tPC scatter colored by RMI, violins |
+| B1 | Running / State | Cell-type running modulation | Vip↑, Sst↓, excitatory gain modulation | RMI, gain/offset decomposition | Violin plots, tuning curves run vs. stat |
+| B2 | Running / State (VIP) | Same VIP subtype for all? | One VIP cluster drives running + adaptation + drift | Multi-feature clustering, differential expression | 3D scatter, gene heatmaps |
+| **B3** | **Running / State** | **Moment-to-moment running coupling** | **ΔF/F tracks running with 100–300 ms lag; Vip strongest** | **10 Hz cross-correlation, running-onset-triggered avg** | **CCGs by subclass, time-resolved gain curves** |
+| B4 | Running / State | tPCs predict running modulation | tPC1 gradient correlates with RMI beyond subclass | Spearman, OLS (subclass + tPCs), F-test | Heatmap, tPC scatter colored by RMI, violins |
+| C1 | Context Adaptation | Block-to-block adaptation | Inhibitory cells (Vip, Sst) show stronger adaptation | Paired comparisons, adaptation index, trial dynamics | Paired scatter, adaptation distributions, time courses |
+| C2 | Context Adaptation | Context alters tuning | Contrast context sharpens CRF; TF context shifts TF tuning | CRF/TF curve comparison, normalization model fits | Context-overlaid tuning curves, normalization fits |
+| C3 | Context Adaptation | Multi-day drift | L2/3 drifts more than L4/5; inhibitory stable | Cross-day correlation, PCA tracking, CKA | Day-vs-day scatter, PCA trajectories |
+| **C4** | **Context Adaptation** | **Within-trial temporal adaptation** | **Adaptation shifts PSTH from transient to sustained** | **10 Hz early vs late trial PSTH, TSI by block context** | **PSTH evolution, context-dependent TSI** |
 | D1 | Spatial Organization | Functional clustering in space | Salt-and-pepper with local bias, beyond cell type | Moran's I, signal/noise corr vs. distance | Spatial maps, correlograms |
 | D2 | Spatial Organization | Local composition affects function | High local Vip density → stronger modulation | Neighborhood composition, correlation with RMI | Depth profiles, scatter density plots |
 | E1 | Connectivity | Noise correlation motifs | Same-type strongest; Vip-Sst weakest | Noise correlations, Mantel test, partial correlation | Subclass×subclass heatmaps, distance plots |
@@ -749,20 +838,20 @@ Questions are organized into **six thematic domains** (Broad → Specific), each
 
 ### Phase 1: Foundation (Essential, do first)
 1. **A1** — Cell-type tuning characterization (establishes baseline functional description)
-2. **C1** — Running modulation by cell type (leverages trial-level running data readily available)
+2. **B1** — Running modulation by cell type (leverages trial-level running data readily available)
 3. **E1** — Noise correlations (foundational connectivity measure)
 4. **G1** — GLM visual vs. state decomposition (leverages pre-fitted models in zarr; fast to execute)
 
 ### Phase 2: Core Science (Main findings)
-5. **B1** — Context adaptation (leverages the unique block structure)
+5. **C1** — Context adaptation (leverages the unique block structure)
 6. **D1** — Spatial functional organization
 7. **A2** — Gene-tuning relationships
-8. **C2** — VIP integration hypothesis (your central hypothesis, needs A1+B1+C1 results)
-9. **C4** — Transcriptomic PCs and running modulation (requires C1 + zarr tPC data)
+8. **B2** — VIP integration hypothesis (your central hypothesis, needs A1+B1+C1 results)
+9. **B4** — Transcriptomic PCs and running modulation (requires C1 + zarr tPC data)
 10. **H1** — Soma morphology and cell-type identity (fast analysis from zarr morphology data)
 
 ### Phase 3: Deep Mechanistic
-11. **B2** — Normalization / gain control modeling
+11. **C2** — Normalization / gain control modeling
 12. **E2** — Directed connectivity
 13. **A3** — Population geometry by type
 14. **D2** — Local neighborhood effects
@@ -777,7 +866,7 @@ Questions are organized into **six thematic domains** (Broad → Specific), each
 21. **F1** — Task-trained RNN
 22. **F2** — Data-driven RNN
 23. **F3** — Temporal trajectory RNN (10 Hz)
-24. **B3** — Multi-day drift (requires 4th mouse or natural movie data)
+24. **C3** — Multi-day drift (requires 4th mouse or natural movie data)
 
 ---
 
