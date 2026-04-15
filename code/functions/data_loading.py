@@ -16,7 +16,7 @@ def zarr_to_df(zarr_group):
     })
 
 
-def load_mouse_zarr(mouse_id, zarr_dir='multimodal_data', include_genes=False):
+def load_mouse_zarr(mouse_id, zarr_dir='multimodal_data', include_genes=True):
     """Load one mouse's data from zarr, returning an adata-like SimpleNamespace.
 
     Parameters
@@ -95,6 +95,7 @@ def load_mouse_zarr(mouse_id, zarr_dir='multimodal_data', include_genes=False):
         X=np.hstack(X_sessions), obs=obs_df, var=pd.concat(var_sessions, ignore_index=True),
         n_obs=n_cells, n_vars=sum(v.shape[0] for v in var_sessions)
     )
+    
 
 
 def load_zarr_10hz(mouse_id, session='session_1', zarr_dir='multimodal_data'):
