@@ -80,7 +80,7 @@ def load_mouse_zarr(mouse_id, zarr_dir='multimodal_data', include_genes=True):
     obs_df = pd.DataFrame(obs_dict)
     n_cells = len(obs_df)
 
-    X_sessions, var_sessions = [], []
+    X_sessions, Layer_sessions, var_sessions = [], [], []
     for si, sess in enumerate(SESSIONS):
         gs = z[f'ophys/drifting_gratings/{sess}/stim_aligned_dff/GratingStim']
         dff = gs['dff'][:]
@@ -89,9 +89,13 @@ def load_mouse_zarr(mouse_id, zarr_dir='multimodal_data', include_genes=True):
         gray = gs['trial_info/gray_screen'][:]
         valid = ~gray
         stim_mask = (time_rel >= 0) & (time_rel <= 2.0)
+        baseline_mask = (time_rel >= -1.0) & (time_rel < 0)
         dff_avg = dff[valid][:, stim_mask, :].mean(axis=1)
+        dff_baseline = dff[valid][:, baseline_mask, :].mean(axis=1)
+        
         run_speed = running[valid][:, stim_mask, 0].mean(axis=1)
         X_sessions.append(dff_avg.T)
+        Layer_sessions.append(dff_baseline.T)  # Add layer info as a feature
         var_sessions.append(pd.DataFrame({
             'contrast': gs['trial_info/contrast'][:][valid],
             'orientation': gs['trial_info/orientation'][:][valid],
@@ -107,7 +111,7 @@ def load_mouse_zarr(mouse_id, zarr_dir='multimodal_data', include_genes=True):
             'day': si + 1,
         }))
     return SimpleNamespace(
-        X=np.hstack(X_sessions), obs=obs_df, var=pd.concat(var_sessions, ignore_index=True),
+        X=np.hstack(X_sessions), Layer=np.hstack(Layer_sessions), obs=obs_df, var=pd.concat(var_sessions, ignore_index=True),
         n_obs=n_cells, n_vars=sum(v.shape[0] for v in var_sessions)
     )
     
