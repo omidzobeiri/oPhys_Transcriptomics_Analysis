@@ -154,6 +154,10 @@
 			"mount": "multiplane-ophys_778174_2025-03-17_10-34-20_processed_2025-03-18_14-58-46"
 		},
 		{
+			"id": "ae243d70-8fca-486f-bea5-b258cc1a989b",
+			"mount": "U01_correlation_analysis"
+		},
+		{
 			"id": "aefb8e91-707d-47df-be35-9c8bfacc3b3c",
 			"mount": "multiplane-ophys_797371_2025-08-06_09-30-08_glm_dg_v2"
 		},

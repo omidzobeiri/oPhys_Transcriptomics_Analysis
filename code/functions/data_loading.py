@@ -16,6 +16,21 @@ def zarr_to_df(zarr_group):
     })
 
 
+def _zarr_trial_info_to_df(trial_info_group):
+    """Convert a zarr trial_info group to a pandas DataFrame."""
+    trial_dict = {}
+    for key in trial_info_group.keys():
+        arr = trial_info_group[key][:]
+        # Decode byte strings when needed
+        if hasattr(arr, 'dtype') and arr.dtype.kind in {'S', 'O'}:
+            arr = np.array([
+                x.decode('utf-8') if isinstance(x, (bytes, bytearray)) else str(x)
+                for x in arr
+            ])
+        trial_dict[key] = arr
+    return pd.DataFrame(trial_dict)
+
+
 def load_mouse_zarr(mouse_id, zarr_dir='multimodal_data', include_genes=True):
     """Load one mouse's data from zarr, returning an adata-like SimpleNamespace.
 
