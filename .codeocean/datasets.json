@@ -30,6 +30,10 @@
 			"mount": "multiplane-ophys_788406_2025-07-29_10-20-34"
 		},
 		{
+			"id": "103c25fc-36b2-4653-a80e-5a5033346922",
+			"mount": "Xenium_786297_2025-07-16_mapped"
+		},
+		{
 			"id": "10f23ab8-7ce1-4642-b016-d2cad1c138d7",
 			"mount": "multiplane-ophys_767022_2025-03-04_08-55-07_glm_dg_v2"
 		},
@@ -114,6 +118,10 @@
 			"mount": "multiplane-ophys_790322_2025-08-05_08-54-42_processed_2025-10-26_22-43-29"
 		},
 		{
+			"id": "40328472-ed8e-4f04-98f0-06751cd1899a",
+			"mount": "Xenium_778174_2025-05-07_processed"
+		},
+		{
 			"id": "41724cf9-6ec6-4374-b696-a84fb9909e73",
 			"mount": "multiplane-ophys_767022_2025-03-05_09-15-47_glm_dg_v2"
 		},
@@ -152,6 +160,10 @@
 		{
 			"id": "56b36469-e0fa-4786-8cc0-67d11f5dff5e",
 			"mount": "multiplane-ophys_790322_2025-08-02_12-29-52_glm_dg_v2"
+		},
+		{
+			"id": "5c76d90b-c4fd-4d0c-9e37-243768060d3d",
+			"mount": "Xenium_797371_2025-10-22_processed"
 		},
 		{
 			"id": "5dce8a60-c850-40ba-90b7-9b476bc6c3b5",
@@ -282,8 +294,16 @@
 			"mount": "multiplane-ophys_755252_2025-01-08_13-57-01_processed_2025-10-10_05-56-48"
 		},
 		{
+			"id": "b5e8f877-e263-436f-afc6-9e42d933615e",
+			"mount": "Xenium_778174_2025-05-07_mapped"
+		},
+		{
 			"id": "b620b6c7-2d7f-445c-9c52-7412e4b98992",
 			"mount": "767018_ctl-czstack-hcr-coreg_2025-10-16_00-00-00"
+		},
+		{
+			"id": "b942d5d8-daa4-411f-aed9-4e6ec082b691",
+			"mount": "Xenium_786297_2025-07-16_processed"
 		},
 		{
 			"id": "c04aecb4-c0aa-424e-9a82-829361d95bc6",
@@ -340,6 +360,10 @@
 		{
 			"id": "d911ebd0-76c6-4ffa-94d1-81bf9ed77d1a",
 			"mount": "790322_2025-07-10_ctl-czstack-hcr-coreg_2026-03-02_00-00-00"
+		},
+		{
+			"id": "d9c35976-e2ff-4f3a-bea9-4e5a06b6d238",
+			"mount": "Xenium_797371_2025-10-22_mapped"
 		},
 		{
 			"id": "de9f15be-7a40-4d69-bb64-8dc304e4877d",

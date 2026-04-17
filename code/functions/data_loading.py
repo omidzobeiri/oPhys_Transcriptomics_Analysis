@@ -51,6 +51,7 @@ def load_mouse_zarr(mouse_id, zarr_dir='multimodal_data', include_genes=True):
     z = zarr.open(f'{zarr_dir}/{mouse_id}_multimodal_data.zarr', 'r')
     ct = z['transcriptomics/cell_type']
     morph = z['morphology/mask_properties']
+    
     obs_dict = {
         'unique_id': z['unique_id'][:].astype(str),
         'mouse_id': mouse_id,
@@ -117,7 +118,7 @@ def load_mouse_zarr(mouse_id, zarr_dir='multimodal_data', include_genes=True):
     
 
 
-def load_zarr_10hz(mouse_id, session='session_1', zarr_dir='multimodal_data'):
+def load_zarr_10hz(mouse_id, session='session_1', zarr_dir='multimodal_data', stimulus_type='GratingStim'):
     """Load 10 Hz trial-resolved data from zarr.
 
     Parameters
@@ -134,7 +135,7 @@ def load_zarr_10hz(mouse_id, session='session_1', zarr_dir='multimodal_data'):
     dict with keys: dff, unique_ids, running, time_rel, trial_info.
     """
     z = zarr.open(f'{zarr_dir}/{mouse_id}_multimodal_data.zarr', 'r')
-    gs = z[f'ophys/drifting_gratings/{session}/stim_aligned_dff/GratingStim']
+    gs = z[f'ophys/drifting_gratings/{session}/stim_aligned_dff/{stimulus_type}']
     ti_dict = {k: gs[f'trial_info/{k}'][:] for k in gs['trial_info'].keys()}
     return {
         'dff': gs['dff'][:],
