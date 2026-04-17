@@ -1,6 +1,6 @@
-# oPhys_Transcriptomics
+# oPhys_Transcriptomics_Analysis
 
-Multi-modal interrogation of visual cortical circuits: linking transcriptomic identity, spatial organization, and neural dynamics in mouse V1.
+Integrative analysis of Multi-modal of visual cortical circuits: linking transcriptomic identity, spatial organization, and neural dynamics in mouse V1.
 
 ## Overview
 
