@@ -48,7 +48,7 @@ def load_mouse_zarr(mouse_id, zarr_dir='multimodal_data', include_genes=True):
     SimpleNamespace with X (n_cells, total_trials), obs (DataFrame), var (DataFrame),
     n_obs (int), n_vars (int).
     """
-    z = zarr.open(f'{zarr_dir}/{mouse_id}_multimodal_data.zarr', 'r')
+    z = zarr.open(f'{zarr_dir}/multimodal_{mouse_id}.zarr', 'r')
     ct = z['transcriptomics/cell_type']
     morph = z['morphology/mask_properties']
     
