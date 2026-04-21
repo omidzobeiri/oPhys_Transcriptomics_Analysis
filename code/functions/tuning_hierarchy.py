@@ -40,9 +40,9 @@ def _bh_fdr(pvals):
 
 
 def _compute_cell_tuning(X, var_df):
-    ori_col = _first_existing(var_df.columns, ["orientation", "ori", "ori_deg", "orientation_deg"])
-    con_col = _first_existing(var_df.columns, ["contrast", "stim_contrast"])
-    tf_col = _first_existing(var_df.columns, ["temporal_frequency", "tf", "TF"])
+    ori_col = "orientation"
+    con_col = "contrast"
+    tf_col = "temporal_frequency"
 
     n_cells = X.shape[0]
     out = pd.DataFrame(index=np.arange(n_cells))
@@ -156,7 +156,7 @@ def compute_tuning_properties_by_session(adata, mouse_id=None):
     var = adata.var.copy().reset_index(drop=False)
     X = _to_numpy(adata.X)
 
-    session_col = _first_existing(var.columns, ["session", "session_name", "ophys_session", "stim_session"])
+    session_col = _first_existing(var.columns, ["session", "session_name", "day","ophys_session", "stim_session"])
     if session_col is None:
         session_values = ["all"]
         session_indexer = {"all": np.arange(var.shape[0])}
